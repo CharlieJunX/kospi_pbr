@@ -2,8 +2,8 @@ name: KOSPI PBR daily
 
 on:
   schedule:
-    # 11:00 UTC = 20:00 Asia/Seoul.
-    - cron: '0 11 * * *'
+    # Monday–Friday at 11:00 UTC = 20:00 Asia/Seoul.
+    - cron: '0 11 * * 1-5'
   workflow_dispatch:
     inputs:
       verify_date:

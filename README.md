@@ -1,6 +1,6 @@
 # 코스피 PBR 일일 갱신
 
-GitHub Actions가 한국시간 매일 20시에 실행됩니다. pykrx로 코스피 지수(1001)의 당일 PBR을 읽어 [코스피 PBR 대시보드](https://kospi-pbr-observatory.postray.chatgpt.site)에 한 건만 추가합니다. GitHub 혼잡 시 시작 시간이 늦어질 수 있습니다.
+GitHub Actions가 한국시간 월~금요일 20시에 실행됩니다. pykrx로 코스피 지수(1001)의 당일 PBR을 읽어 [코스피 PBR 대시보드](https://kospi-pbr-observatory.postray.chatgpt.site)에 한 건만 추가합니다. GitHub 혼잡 시 시작 시간이 늦어질 수 있습니다.
 
 ## 설정
 
