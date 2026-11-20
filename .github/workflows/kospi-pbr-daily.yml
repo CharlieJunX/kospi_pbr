@@ -25,6 +25,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    outputs:
+      updated_date: ${{ steps.publish.outputs.updated_date }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -34,6 +36,7 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install --requirement requirements.txt
       - name: Fetch and publish the current Seoul date
+        id: publish
         env:
           KRX_ID: ${{ secrets.KRX_ID }}
           KRX_PW: ${{ secrets.KRX_PW }}
@@ -45,3 +48,24 @@ jobs:
           else
             python kospi_pbr_daily.py --publish
           fi
+
+  telegram:
+    needs: refresh
+    if: needs.refresh.outputs.updated_date != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Send the completion notification
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          UPDATED_DATE: ${{ needs.refresh.outputs.updated_date }}
+        run: python notify_telegram.py "$UPDATED_DATE"

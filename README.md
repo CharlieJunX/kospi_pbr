@@ -11,6 +11,8 @@ GitHub Actions가 한국시간 매일 20시에 실행됩니다. pykrx로 코스�
 | `KRX_ID` | KRX 정보데이터시스템 회원 아이디 |
 | `KRX_PW` | KRX 정보데이터시스템 회원 비밀번호 |
 | `SITES_SERVICE_TOKEN` | 해당 대시보드의 Sites 서비스 액세스 토큰 |
+| `TELEGRAM_BOT_TOKEN` | 완료 알림을 보낼 Telegram 봇 토큰 |
+| `TELEGRAM_CHAT_ID` | 완료 메시지를 받을 Telegram 채팅 ID |
 
 ## 첫 실행 확인
 
@@ -19,3 +21,8 @@ GitHub Actions가 한국시간 매일 20시에 실행됩니다. pykrx로 코스�
 3. 수동 실행 로그에 `added` 또는 `already_present`가 표시되면 대시보드의 기준일과 PBR을 확인합니다.
 
 공식 조회 화면은 [KRX 지수 PER/PBR/배당수익률](https://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201010107)입니다.
+
+## Telegram 완료 알림
+
+Sites에 새 거래일이 저장되면 `KOSPI PBR 작업 완료` 메시지와 기준일을 보냅니다.
+알림 작업만 실패했으면 GitHub Actions의 **Re-run failed jobs**로 저장 단계를 다시 실행하지 않고 알림을 재시도합니다.

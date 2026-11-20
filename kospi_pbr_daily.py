@@ -130,6 +130,10 @@ def main():
         if args.publish:
             status = publish_observation(observation)
             print(f"{target} Sites 갱신 결과 {status}")
+            output_path = os.environ.get("GITHUB_OUTPUT")
+            if status == "added" and output_path:
+                with open(output_path, "a", encoding="utf-8") as output:
+                    output.write(f"updated_date={observation['date']}\n")
         else:
             print(json.dumps(observation))
         return 0
