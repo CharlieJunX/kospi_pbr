@@ -1,0 +1,47 @@
+name: KOSPI PBR daily
+
+on:
+  schedule:
+    # 11:00 UTC = 20:00 Asia/Seoul.
+    - cron: '0 11 * * *'
+  workflow_dispatch:
+    inputs:
+      verify_date:
+        description: 'Optional YYYY-MM-DD for a read-only KRX check'
+        required: false
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: kospi-pbr-daily
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --requirement requirements.txt
+      - name: Fetch and publish the current Seoul date
+        env:
+          KRX_ID: ${{ secrets.KRX_ID }}
+          KRX_PW: ${{ secrets.KRX_PW }}
+          SITES_SERVICE_TOKEN: ${{ secrets.SITES_SERVICE_TOKEN }}
+          VERIFY_DATE: ${{ inputs.verify_date }}
+        run: |
+          if [[ -n "$VERIFY_DATE" ]]; then
+            python kospi_pbr_daily.py --date "$VERIFY_DATE"
+          else
+            python kospi_pbr_daily.py --publish
+          fi
