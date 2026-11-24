@@ -1,28 +1,54 @@
-# 코스피 PBR 일일 갱신
+# 코스피 PBR 조회, 게시 및 Telegram 알림
 
-GitHub Actions가 한국시간 월~금요일 20시에 실행됩니다. pykrx로 코스피 지수(1001)의 당일 PBR을 읽어 [코스피 PBR 대시보드](https://kospi-pbr-observatory.postray.chatgpt.site)에 한 건만 추가합니다. GitHub 혼잡 시 시작 시간이 늦어질 수 있습니다.
+로컬 PC에서 pykrx로 코스피 지수(1001)의 PBR을 조회합니다. `--publish`로 [코스피 PBR 관측소](https://kospi-pbr-observatory.postray.chatgpt.site/)에 게시할 수 있습니다. `--notify`를 사용하면 기준일과 PBR을 Telegram으로 보냅니다.
 
 ## 설정
 
-저장소의 **Settings → Secrets and variables → Actions → New repository secret**에서 아래 항목을 등록합니다.
+```powershell
+python -m pip install -r requirements.txt
+```
 
-| 이름 | 값 |
-| --- | --- |
-| `KRX_ID` | KRX 정보데이터시스템 회원 아이디 |
-| `KRX_PW` | KRX 정보데이터시스템 회원 비밀번호 |
-| `SITES_SERVICE_TOKEN` | 해당 대시보드의 Sites 서비스 액세스 토큰 |
-| `TELEGRAM_BOT_TOKEN` | 완료 알림을 보낼 Telegram 봇 토큰 |
-| `TELEGRAM_CHAT_ID` | 완료 메시지를 받을 Telegram 채팅 ID |
+`kospi_pbr_daily.py`와 같은 폴더의 `.env`에 다음 값을 설정합니다.
 
-## 첫 실행 확인
+```dotenv
+KRX_ID=your_krx_id
+KRX_PW=your_krx_password
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+TELEGRAM_CHAT_ID=your_telegram_chat_id
+SITES_SERVICE_TOKEN=your_sites_service_token
+SITES_PUBLISH_TOKEN=your_sites_publish_token
+```
 
-1. **Actions → KOSPI PBR daily → Run workflow**에서 `verify_date`에 `2026-11-19`를 입력하면 KRX 조회만 실행합니다. 이 날짜의 대시보드 저장값은 1.27배입니다.
-2. `verify_date`를 비워 수동 실행하면 한국시간 당일 데이터만 Sites에 반영합니다. 주말이나 당일 값이 없으면 건너뜁니다. 같은 날짜와 값의 재실행은 중복을 만들지 않습니다.
-3. 수동 실행 로그에 `added` 또는 `already_present`가 표시되면 대시보드의 기준일과 PBR을 확인합니다.
+조회만 할 때는 KRX 값 두 개만 있으면 됩니다. 게시에는 Sites 서비스 토큰과 관측소의 게시 전용 토큰이 필요합니다. 실행 환경에 설정된 값은 `.env`보다 우선합니다.
 
-공식 조회 화면은 [KRX 지수 PER/PBR/배당수익률](https://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201010107)입니다.
+## 실행
 
-## Telegram 완료 알림
+```powershell
+# 한국시간 기준 오늘 PBR 조회 및 게시
+python kospi_pbr_daily.py --publish
 
-Sites에 새 거래일이 저장되면 `KOSPI PBR 작업 완료` 메시지와 기준일을 보냅니다.
-알림 작업만 실패했으면 GitHub Actions의 **Re-run failed jobs**로 저장 단계를 다시 실행하지 않고 알림을 재시도합니다.
+# 특정 거래일의 PBR 조회 및 게시
+python kospi_pbr_daily.py --date 2026-11-24 --publish
+
+# 오늘 PBR 조회, 게시 및 알림
+python kospi_pbr_daily.py --publish --notify
+
+# 한국시간 기준 오늘 PBR 조회 및 알림
+python kospi_pbr_daily.py --notify
+
+# 특정 거래일의 PBR 조회 및 알림
+python kospi_pbr_daily.py --date 2026-11-23 --notify
+
+# 특정 거래일의 PBR 조회만 실행
+python kospi_pbr_daily.py --date 2026-11-23
+```
+
+주말이거나 해당 날짜에 유효한 PBR이 없으면 건너뜁니다. 같은 날짜에 `--notify`를 다시 실행하면 알림을 다시 보냅니다. 게시할 거래일과 값이 이미 저장되어 있으면 `already_present`가 표시됩니다.
+
+조회 값은 [KRX 지수 PER/PBR/배당수익률](https://data.krx.co.kr/contents/MDC/MDI/mdiLoader/index.cmd?menuId=MDC0201010107)에서 확인할 수 있습니다.
+
+## GitHub Actions
+
+매주 월~금요일 한국시간 오후 8시 17분에 `python kospi_pbr_daily.py --publish --notify`를 실행합니다. 수동으로 실행하려면 **Actions → KOSPI PBR daily → Run workflow**를 엽니다.
+
+저장소의 **Settings → Secrets and variables → Actions**에 `KRX_ID`, `KRX_PW`, `SITES_SERVICE_TOKEN`, `SITES_PUBLISH_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`를 Repository secrets로 등록합니다.

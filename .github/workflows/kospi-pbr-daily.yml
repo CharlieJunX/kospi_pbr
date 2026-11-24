@@ -2,31 +2,21 @@ name: KOSPI PBR daily
 
 on:
   schedule:
-    # Monday–Friday at 11:00 UTC = 20:00 Asia/Seoul.
-    - cron: '17 11 * * 1-5'
+    - cron: '17 20 * * 1-5'
+      timezone: Asia/Seoul
   workflow_dispatch:
-    inputs:
-      verify_date:
-        description: 'Optional YYYY-MM-DD for a read-only KRX check'
-        required: false
-        type: string
 
-permissions: {}
+permissions:
+  contents: read
 
 concurrency:
   group: kospi-pbr-daily
   cancel-in-progress: false
 
 jobs:
-  refresh:
-    if: github.ref == 'refs/heads/main'
+  publish:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: read
-      id-token: write
-    outputs:
-      updated_date: ${{ steps.publish.outputs.updated_date }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -34,38 +24,13 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
-      - run: python -m pip install --requirement requirements.txt
-      - name: Fetch and publish the current Seoul date
-        id: publish
+      - run: python -m pip install -r requirements.txt
+      - name: Publish PBR and send Telegram notification
         env:
           KRX_ID: ${{ secrets.KRX_ID }}
           KRX_PW: ${{ secrets.KRX_PW }}
           SITES_SERVICE_TOKEN: ${{ secrets.SITES_SERVICE_TOKEN }}
-          VERIFY_DATE: ${{ inputs.verify_date }}
-        run: |
-          if [[ -n "$VERIFY_DATE" ]]; then
-            python kospi_pbr_daily.py --date "$VERIFY_DATE"
-          else
-            python kospi_pbr_daily.py --publish
-          fi
-
-  telegram:
-    needs: refresh
-    if: needs.refresh.outputs.updated_date != ''
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.11'
-      - name: Send the completion notification
-        env:
+          SITES_PUBLISH_TOKEN: ${{ secrets.SITES_PUBLISH_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          UPDATED_DATE: ${{ needs.refresh.outputs.updated_date }}
-        run: python notify_telegram.py "$UPDATED_DATE"
+        run: python kospi_pbr_daily.py --publish --notify

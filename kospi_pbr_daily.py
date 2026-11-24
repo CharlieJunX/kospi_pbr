@@ -1,25 +1,32 @@
 #!/usr/bin/env python3
 """Fetch one KRX KOSPI PBR observation using pykrx.
 
-Install: python -m pip install "pykrx==1.2.9"
-Set KRX_ID and KRX_PW in the execution environment.
+Install: python -m pip install -r requirements.txt
+Set KRX_ID and KRX_PW in .env beside this script or in the execution environment.
 Example: python kospi_pbr_daily.py --date 2026-11-19
-Pass --publish to send today's verified result to the hosted dashboard.
+Pass --publish to save the result to the KOSPI PBR Observatory.
+Pass --notify to send the PBR result to Telegram using TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID.
 """
 
 import argparse
 from contextlib import redirect_stdout
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from http.client import HTTPException, HTTPSConnection
 import json
 import os
+from pathlib import Path
+import re
 import sys
 from zoneinfo import ZoneInfo
+
+from dotenv import dotenv_values
 
 
 KOSPI_TICKER = "1001"
 SEOUL = ZoneInfo("Asia/Seoul")
-SITES_ENDPOINT = "https://kospi-pbr-observatory.postray.chatgpt.site/api/pbr/observations"
+SITES_HOST = "kospi-pbr-observatory.postray.chatgpt.site"
+SITES_PATH = "/api/pbr/observations"
 
 
 def extract_observation(frame, target_date):
@@ -49,8 +56,26 @@ def extract_observation(frame, target_date):
     return {"date": target_date.isoformat(), "pbr": float(pbr)}
 
 
+def load_dotenv_environment(keys):
+    missing = [key for key in keys if not os.environ.get(key)]
+    if not missing:
+        return
+
+    values = dotenv_values(
+        Path(__file__).resolve().with_name(".env"),
+        encoding="utf-8-sig",
+        interpolate=False,
+    )
+    for key in missing:
+        value = values.get(key)
+        if value:
+            os.environ[key] = value
+
+
 def fetch_pbr(target_date):
-    missing = [key for key in ("KRX_ID", "KRX_PW") if not os.environ.get(key)]
+    credential_keys = ("KRX_ID", "KRX_PW")
+    load_dotenv_environment(credential_keys)
+    missing = [key for key in credential_keys if not os.environ.get(key)]
     if missing:
         raise ValueError("환경변수가 필요합니다. " + ", ".join(missing))
 
@@ -68,56 +93,106 @@ def fetch_pbr(target_date):
 
 
 def publish_observation(observation):
-    import requests
-
-    keys = ("SITES_SERVICE_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL", "ACTIONS_ID_TOKEN_REQUEST_TOKEN")
-    missing = [key for key in keys if not os.environ.get(key)]
+    keys = ("SITES_SERVICE_TOKEN", "SITES_PUBLISH_TOKEN")
+    load_dotenv_environment(keys)
+    tokens = {key: os.environ.get(key, "").strip() for key in keys}
+    missing = [key for key in keys if not tokens[key]]
     if missing:
-        raise ValueError("게시 환경변수가 필요합니다. " + ", ".join(missing))
+        raise ValueError("Sites 게시에 필요한 .env 설정을 확인하세요. " + ", ".join(missing))
+    if any(not re.fullmatch(r"[A-Za-z0-9._~-]+", token) for token in tokens.values()):
+        raise ValueError("Sites 게시 토큰 형식이 올바르지 않습니다.")
 
-    oidc_response = requests.get(
-        os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"],
-        params={"audience": SITES_ENDPOINT},
-        headers={"Authorization": "Bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]},
-        timeout=15,
-        allow_redirects=False,
-    )
-    if oidc_response.status_code != 200:
-        raise ValueError(f"GitHub 실행 인증 실패 (HTTP {oidc_response.status_code})")
-    oidc_token = oidc_response.json().get("value")
-    if not isinstance(oidc_token, str) or not oidc_token:
-        raise ValueError("GitHub 실행 인증 토큰이 응답에 없습니다.")
+    connection = HTTPSConnection(SITES_HOST, timeout=30)
+    try:
+        connection.request(
+            "POST", SITES_PATH, body=json.dumps(observation).encode("utf-8"),
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "OAI-Sites-Authorization": "Bearer " + tokens["SITES_SERVICE_TOKEN"],
+                "Authorization": "Bearer " + tokens["SITES_PUBLISH_TOKEN"],
+            },
+        )
+        response = connection.getresponse()
+        if response.status not in (200, 201):
+            raise ValueError(f"Sites 게시 실패 (HTTP {response.status})")
+        try:
+            result = json.loads(response.read(8192))
+        except (ValueError, UnicodeError):
+            raise ValueError("Sites 응답에서 게시 결과를 확인하지 못했습니다.") from None
+    except (OSError, HTTPException) as exc:
+        raise ValueError(f"Sites 게시 결과를 확인하지 못했습니다 ({type(exc).__name__}).") from None
+    finally:
+        connection.close()
 
-    response = requests.post(
-        SITES_ENDPOINT,
-        json=observation,
-        headers={
-            "OAI-Sites-Authorization": "Bearer " + os.environ["SITES_SERVICE_TOKEN"],
-            "Authorization": "Bearer " + oidc_token,
-        },
-        timeout=30,
-        allow_redirects=False,
-    )
-    if response.status_code not in (200, 201):
-        raise ValueError(f"Sites 갱신 실패 (HTTP {response.status_code})")
-    result = response.json()
-    if result.get("status") not in ("added", "already_present") or result.get("date") != observation["date"]:
-        raise ValueError("Sites 응답에서 갱신을 확인하지 못했습니다.")
-    return result["status"]
+    if not isinstance(result, dict) or result.get("date") != observation["date"]:
+        raise ValueError("Sites 응답에서 게시 결과를 확인하지 못했습니다.")
+    status = result.get("status")
+    if status not in ("added", "already_present"):
+        raise ValueError("Sites 응답에서 게시 결과를 확인하지 못했습니다.")
+    return status
+
+
+def send_completion(observation, bot_token, chat_id):
+    if not re.fullmatch(r"[0-9]+:[A-Za-z0-9_-]+", bot_token):
+        raise ValueError("TELEGRAM_BOT_TOKEN 형식이 올바르지 않습니다.")
+
+    payload = json.dumps({
+        "chat_id": chat_id,
+        "text": (
+            f"KOSPI PBR 조회 결과\n기준일 {observation['date']}\n"
+            f"PBR {observation['pbr']:.2f}배"
+        ),
+    }).encode("utf-8")
+
+    connection = HTTPSConnection("api.telegram.org", timeout=15)
+    try:
+        connection.request(
+            "POST", f"/bot{bot_token}/sendMessage", body=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        response = connection.getresponse()
+        if response.status != 200:
+            raise ValueError(f"Telegram 전송 실패 (HTTP {response.status})")
+        result = json.loads(response.read())
+        if not isinstance(result, dict) or result.get("ok") is not True:
+            raise ValueError("Telegram에서 전송 성공을 확인하지 못했습니다.")
+    finally:
+        connection.close()
+
+
+def notify_completion(observation):
+    try:
+        keys = ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID")
+        load_dotenv_environment(keys)
+        bot_token, chat_id = (os.environ.get(key, "").strip() for key in keys)
+        if not bot_token or not chat_id:
+            raise ValueError(
+                "Telegram 알림에 필요한 .env 설정을 확인하세요. "
+                + ", ".join(keys)
+            )
+        send_completion(observation, bot_token, chat_id)
+    except (OSError, HTTPException, json.JSONDecodeError, UnicodeError) as exc:
+        print(f"Telegram 전송 결과를 확인하지 못했습니다 ({type(exc).__name__}).", file=sys.stderr)
+        return 1
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    print(f"{observation['date']} Telegram 알림 전송 완료", file=sys.stderr)
+    return 0
 
 
 def main():
     parser = argparse.ArgumentParser(description="한국시간 기준 코스피 PBR 하루치 조회")
-    parser.add_argument("--date", type=date.fromisoformat, help="검증용 조회일 (YYYY-MM-DD)")
-    parser.add_argument("--publish", action="store_true", help="당일 유효 PBR을 Sites에 반영")
+    parser.add_argument("--date", type=date.fromisoformat, help="조회일 (YYYY-MM-DD)")
+    parser.add_argument("--publish", action="store_true", help="조회 결과를 Sites에 게시")
+    parser.add_argument("--notify", action="store_true", help="조회 결과를 Telegram으로 전송")
     args = parser.parse_args()
 
     today = datetime.now(SEOUL).date()
     target = args.date or today
     if target > today:
         parser.error("미래 날짜는 조회할 수 없습니다.")
-    if args.publish and target != today:
-        parser.error("Sites에는 한국시간 기준 오늘 값만 게시할 수 있습니다.")
     if target.weekday() >= 5:
         print(f"{target} 주말 건너뜀", file=sys.stderr)
         return 0
@@ -125,22 +200,19 @@ def main():
     try:
         observation = fetch_pbr(target)
         if observation is None:
-            print(f"{target} 당일 PBR 미확인. 갱신 건너뜀", file=sys.stderr)
+            print(f"{target} 유효한 PBR을 확인하지 못했습니다.", file=sys.stderr)
             return 0
+        print(json.dumps(observation))
         if args.publish:
             status = publish_observation(observation)
-            print(f"{target} Sites 갱신 결과 {status}")
-            output_path = os.environ.get("GITHUB_OUTPUT")
-            if status == "added" and output_path:
-                with open(output_path, "a", encoding="utf-8") as output:
-                    output.write(f"updated_date={observation['date']}\n")
-        else:
-            print(json.dumps(observation))
+            print(f"{target} Sites 게시 결과 {status}", file=sys.stderr)
+        if args.notify:
+            return notify_completion(observation)
         return 0
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
     except Exception as exc:
-        print(f"조회 또는 데이터 처리 실패 ({type(exc).__name__})", file=sys.stderr)
+        print(f"조회 또는 알림 처리 실패 ({type(exc).__name__})", file=sys.stderr)
     return 1
 
 
