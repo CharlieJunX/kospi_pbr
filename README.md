@@ -23,17 +23,19 @@ SITES_PUBLISH_TOKEN=your_sites_publish_token
 
 ## 실행
 
+`--date`를 생략하면 한국시간 기준 전날의 PBR을 조회합니다.
+
 ```powershell
-# 한국시간 기준 오늘 PBR 조회 및 게시
+# 전날 PBR 조회 및 게시
 python kospi_pbr_daily.py --publish
 
 # 특정 거래일의 PBR 조회 및 게시
 python kospi_pbr_daily.py --date 2026-11-24 --publish
 
-# 오늘 PBR 조회, 게시 및 알림
+# 전날 PBR 조회, 게시 및 알림
 python kospi_pbr_daily.py --publish --notify
 
-# 한국시간 기준 오늘 PBR 조회 및 알림
+# 전날 PBR 조회 및 알림
 python kospi_pbr_daily.py --notify
 
 # 특정 거래일의 PBR 조회 및 알림
@@ -49,6 +51,6 @@ python kospi_pbr_daily.py --date 2026-11-23
 
 ## GitHub Actions
 
-매주 월~금요일 한국시간 오후 8시 17분에 `python kospi_pbr_daily.py --publish --notify`를 실행합니다. 수동으로 실행하려면 **Actions → KOSPI PBR daily → Run workflow**를 엽니다.
+저장소에 푸시할 때와 한국시간 매시 00분, 15분, 30분, 45분에 `python kospi_pbr_daily.py --publish --notify`를 실행합니다. 대상은 한국시간 기준 전날이며, 유효한 PBR이 있으면 실행할 때마다 Telegram 알림을 보냅니다. 예약 실행은 GitHub 기본 브랜치에서 이루어집니다. 수동으로 실행하려면 **Actions → KOSPI PBR daily → Run workflow**를 엽니다.
 
 저장소의 **Settings → Secrets and variables → Actions**에 `KRX_ID`, `KRX_PW`, `SITES_SERVICE_TOKEN`, `SITES_PUBLISH_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`를 Repository secrets로 등록합니다.

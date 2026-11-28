@@ -10,7 +10,7 @@ Pass --notify to send the PBR result to Telegram using TELEGRAM_BOT_TOKEN and TE
 
 import argparse
 from contextlib import redirect_stdout
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from http.client import HTTPException, HTTPSConnection
 import json
@@ -184,13 +184,13 @@ def notify_completion(observation):
 
 def main():
     parser = argparse.ArgumentParser(description="한국시간 기준 코스피 PBR 하루치 조회")
-    parser.add_argument("--date", type=date.fromisoformat, help="조회일 (YYYY-MM-DD)")
+    parser.add_argument("--date", type=date.fromisoformat, help="조회일 (YYYY-MM-DD, 기본값은 한국시간 기준 전날)")
     parser.add_argument("--publish", action="store_true", help="조회 결과를 Sites에 게시")
     parser.add_argument("--notify", action="store_true", help="조회 결과를 Telegram으로 전송")
     args = parser.parse_args()
 
     today = datetime.now(SEOUL).date()
-    target = args.date or today
+    target = args.date or (today - timedelta(days=1))
     if target > today:
         parser.error("미래 날짜는 조회할 수 없습니다.")
     if target.weekday() >= 5:

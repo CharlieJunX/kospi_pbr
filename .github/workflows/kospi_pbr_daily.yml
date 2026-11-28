@@ -1,8 +1,9 @@
 name: KOSPI PBR daily
 
 on:
+  push:
   schedule:
-    - cron: '17 20 * * 1-5'
+    - cron: '*/15 * * * *'
       timezone: Asia/Seoul
   workflow_dispatch:
 
